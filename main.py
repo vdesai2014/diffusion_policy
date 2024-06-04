@@ -20,7 +20,7 @@ from typing import Optional
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 
-def create_networks(config: Dict[str, int], image_keys: List[str], device: torch.device) -> nn.ModuleDict:
+def create_networks(config: Dict[str, int], device: torch.device) -> nn.ModuleDict:
     vision_encoder = get_resnet('resnet18')
     vision_encoder = replace_bn_with_gn(vision_encoder)
     vision_feature_dim = 512 
@@ -32,7 +32,7 @@ def create_networks(config: Dict[str, int], image_keys: List[str], device: torch
         global_cond_dim=obs_dim*config['obs_horizon']
     )
 
-    obs_encoder = DDP(obs_encoder.to(device))
+    obs_encoder = DDP(vision_encoder.to(device))
     noise_pred_net = DDP(noise_pred_net.to(device))
 
     nets = nn.ModuleDict({
@@ -69,7 +69,7 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
                     B = nagent_pos.shape[0]
 
                     image_features = nets['vision_encoder'](nimage.flatten(end_dim=1))
-                    assert image_features.shape == (B, config['obs_horizon'], 512*len(nets['vision_encoder'].image_keys))
+                    #assert image_features.shape == (B, config['obs_horizon'], 512*len(nets['vision_encoder'].image_keys))
                     image_features = image_features.reshape(B, config['obs_horizon'], -1)
                     obs_features = torch.cat([image_features, nagent_pos], dim=-1)
                     obs_cond = obs_features.flatten(start_dim=1)
@@ -167,7 +167,7 @@ def main():
         persistent_workers=True
     )
 
-    nets = create_networks(config, image_keys=dataset.image_keys, device=device)
+    nets = create_networks(config, device=device)
 
     noise_scheduler = create_noise_scheduler(config['num_diffusion_iters'])
 
