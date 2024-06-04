@@ -54,7 +54,6 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
     wandb.login(key='1bafb483fc18be5411bc07ae3693994f943313c7')
     wandb.init(project="diffusion_test")
     ema = EMAModel(parameters=nets.parameters(), power=0.75)
-    ema = nn.parallel.DistributedDataParallel(ema, device_ids=[local_rank])
     optimizer = torch.optim.AdamW(params=nets.parameters(), lr=1e-4, weight_decay=1e-6)
     lr_scheduler = get_scheduler(name='cosine', optimizer=optimizer, num_warmup_steps=500, num_training_steps=len(dataloader) * config['num_epochs'])
 
