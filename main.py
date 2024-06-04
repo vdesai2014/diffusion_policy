@@ -25,10 +25,7 @@ import os
 
 def upload_to_s3(bucket_name: str, checkpoint_path: str, s3_key: str):
     s3 = boto3.client(
-        's3',
-        aws_access_key_id='AKIA6GBMA7MSJUM7CHB6',
-        aws_secret_access_key='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',
-        region_name='us-west-2'
+        's3'
     )
     s3.upload_file(checkpoint_path, bucket_name, s3_key)
     os.remove(checkpoint_path) 
