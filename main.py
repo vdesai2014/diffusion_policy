@@ -19,6 +19,19 @@ import sys
 from typing import Optional
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
+import boto3
+import multiprocessing
+import os
+
+def upload_to_s3(bucket_name: str, checkpoint_path: str, s3_key: str):
+    s3 = boto3.client(
+        's3',
+        aws_access_key_id='AKIA6GBMA7MSJUM7CHB6',
+        aws_secret_access_key='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',
+        region_name='us-west-2'
+    )
+    s3.upload_file(checkpoint_path, bucket_name, s3_key)
+    os.remove(checkpoint_path) 
 
 def create_networks(config: Dict[str, int], device: torch.device) -> nn.ModuleDict:
     vision_encoder = get_resnet('resnet18')
@@ -57,6 +70,8 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
     optimizer = torch.optim.AdamW(params=nets.parameters(), lr=1e-4, weight_decay=1e-6)
     lr_scheduler = get_scheduler(name='cosine', optimizer=optimizer, num_warmup_steps=500, num_training_steps=len(dataloader) * config['num_epochs'])
 
+    bucket_name = 'vrushank-robot-data' 
+
     with tqdm(range(config['num_epochs']), desc='Epoch') as tglobal:
         for epoch_idx in tglobal:
             epoch_loss = list()
@@ -68,7 +83,6 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
                     B = nagent_pos.shape[0]
 
                     image_features = nets['vision_encoder'](nimage.flatten(end_dim=1))
-                    #assert image_features.shape == (B, config['obs_horizon'], 512*len(nets['vision_encoder'].image_keys))
                     image_features = image_features.reshape(B, config['obs_horizon'], -1)
                     obs_features = torch.cat([image_features, nagent_pos], dim=-1)
                     obs_cond = obs_features.flatten(start_dim=1)
@@ -95,9 +109,8 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
                 "loss": avg_loss,
             })
             # Checkpointing EMA weights
-            checkpointing = False
-            if checkpointing and dist.get_rank() == 0 and epoch_idx % 10 == 0:  # Checkpoint every epoch; adjust as needed
-                dist.barrier()
+            checkpointing = True
+            if checkpointing and dist.get_rank() == 0 and epoch_idx % 10 == 0:  # Checkpoint every 10 epochs; adjust as needed
                 checkpoint_path = f"checkpoints/ema_checkpoint_epoch_{epoch_idx}.pt"
                 ema_state = {
                     'model_state_dict': nets.state_dict(),
@@ -109,11 +122,19 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
                     'normalization_stats': dataset_stats  # Add normalization stats to the checkpoint
                 }
                 torch.save(ema_state, checkpoint_path)
+                
+                # Start a new process to upload the checkpoint to S3
+                s3_key = f"checkpoints/ema_checkpoint_epoch_{epoch_idx}.pt"
+                p = multiprocessing.Process(target=upload_to_s3, args=(bucket_name, checkpoint_path, s3_key))
+                p.start()
+            dist.barrier()
+                
             tglobal.set_postfix(loss=np.mean(epoch_loss))
 
     ema_nets = nn.ModuleDict(nets)
     ema.copy_to(ema_nets.parameters())
     return ema_nets
+
 
 def load_pretrained(nets: nn.ModuleDict, ckpt_path: str) -> Tuple[nn.ModuleDict, Dict[str, float]]:
     if not os.path.isfile(ckpt_path):
