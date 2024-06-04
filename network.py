@@ -103,7 +103,6 @@ class ConditionalResidualBlock1D(nn.Module):
         out = out + self.residual_conv(x)
         return out
 
-@torch.compile
 class ConditionalUnet1D(nn.Module):
     def __init__(self,
         input_dim,
