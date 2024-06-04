@@ -95,7 +95,8 @@ def train(nets: nn.ModuleDict, dataloader: torch.utils.data.DataLoader, device: 
                 "loss": avg_loss,
             })
             # Checkpointing EMA weights
-            if dist.get_rank() == 0 and epoch_idx % 10 == 0:  # Checkpoint every epoch; adjust as needed
+            checkpointing = False
+            if checkpointing and dist.get_rank() == 0 and epoch_idx % 10 == 0:  # Checkpoint every epoch; adjust as needed
                 dist.barrier()
                 checkpoint_path = f"checkpoints/ema_checkpoint_epoch_{epoch_idx}.pt"
                 ema_state = {
